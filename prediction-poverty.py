@@ -77,7 +77,7 @@ def make_country_sub(preds, test_feat, country):
 
 
 # Load files
-DATA_DIR = 'C:\\Users\\Alvaro\\Acciones\\DSC002\\data\\'
+DATA_DIR = 'input/poverty/'
 data_paths = {'A': {'train': os.path.join(DATA_DIR, 'A_hhold_train.csv'), 
                     'test':  os.path.join(DATA_DIR, 'A_hhold_test.csv')}, 
               'B': {'train': os.path.join(DATA_DIR, 'B_hhold_train.csv'), 
@@ -140,30 +140,4 @@ b_logloss = log_loss(bT_val.poor, b_preds)
 c_logloss = log_loss(cT_val.poor, c_preds)
 
 mean_logloss = np.mean([a_logloss,b_logloss,c_logloss])
-print(mean_logloss)
-
-# Submission------------------------------------------
-
-# Read test data
-a_test = pd.read_csv(data_paths['A']['test'], index_col='id')
-b_test = pd.read_csv(data_paths['B']['test'], index_col='id')
-c_test = pd.read_csv(data_paths['C']['test'], index_col='id')
-
-# process the test data
-a_test = pre_process_data(a_test, enforce_cols=aT_trn.drop('poor', axis=1).columns)
-b_test = pre_process_data(b_test, enforce_cols=bT_trn.drop('poor', axis=1).columns)
-c_test = pre_process_data(c_test, enforce_cols=cT_trn.drop('poor', axis=1).columns)
-
-# predict
-a_preds = model_a.predict_proba(a_test)
-b_preds = model_b.predict_proba(b_test)
-c_preds = model_c.predict_proba(c_test)
-
-# convert preds to data frame
-a_sub = make_country_sub(a_preds, a_test, 'A')
-b_sub = make_country_sub(b_preds, b_test, 'B')
-c_sub = make_country_sub(c_preds, c_test, 'C')
-
-submission = pd.concat([a_sub, b_sub, c_sub])
-
-submission.to_csv(os.path.join(DATA_DIR,'submission4.csv'))
+print ("Mean LogLoss:", round(mean_logloss, 3))
