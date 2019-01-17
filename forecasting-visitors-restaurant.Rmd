@@ -1,0 +1,244 @@
+---
+title: "Recruit Restaurant Visitor Forecasting"
+output: html_document
+---
+
+```{r message=FALSE}
+library(lubridate)
+```
+
+## Description
+
+Running a thriving local restaurant isn't always as charming as first impressions appear. There are often all sorts of unexpected troubles popping up that could hurt business.
+
+One common predicament is that restaurants need to know how many customers to expect each day to effectively purchase ingredients and schedule staff members. This forecast isn't easy to make because many unpredictable factors affect restaurant attendance, like weather and local competition. It's even harder for newer restaurants with little historical data.
+
+Recruit Holdings has unique access to key datasets that could make automated future customer prediction possible. Specifically, Recruit Holdings owns Hot Pepper Gourmet (a restaurant review service), AirREGI (a restaurant point of sales service), and Restaurant Board (reservation log management software).
+
+In this competition, you're challenged to use reservation and visitation data to predict the total number of visitors to a restaurant for future dates. This information will help restaurants be much more efficient and allow them to focus on creating an enjoyable dining experience for their customers.
+
+## Data
+
+```{r}
+air_reserve  <- read.csv("input/restaurant/air_reserve.csv", stringsAsFactors = F)
+hpg_reserve  <- read.csv("input/restaurant/hpg_reserve.csv", stringsAsFactors = F)
+air_stores   <- read.csv("input/restaurant/air_store_info.csv", stringsAsFactors = F,fileEncoding = "UTF-8")
+hpg_stores   <- read.csv("input/restaurant/hpg_store_info.csv")
+store_visits <- read.csv("input/restaurant/air_visit_data.csv")
+holydays     <- read.csv("input/restaurant/date_info.csv")
+store_relation <- read.csv("input/restaurant/store_id_relation.csv")
+
+```
+
+## Get more info about stores
+
+```{r}
+# Order info about stores
+stores<-air_stores
+# Get place of area
+stores$city_ward<-gsub("^((?:\\S+\\s+){1}\\S+).*","\\1",stores$air_area_name)
+stores$ini_place<-nchar(stores$city_ward) + 2
+stores$end_place<-nchar(stores$air_area_name)
+stores$place<-substr(stores$air_area_name,stores$ini_place,stores$end_place)
+# Get city of area
+stores$city<-gsub("^((?:\\S+\\s+){0}\\S+).*","\\1",stores$air_area_name)
+# Get ward of area
+stores$ini_ward<-nchar(stores$city) + 2
+stores$end_ward<-nchar(stores$city_ward)
+stores$ward<-substr(stores$city_ward,stores$ini_ward,stores$end_ward)
+# Get if stores have hpg system
+stores<-merge(stores,store_relation,by = "air_store_id",all = TRUE)
+stores$hpg_system <- 1
+stores$hpg_system[is.na(stores$hpg_store_id)] <- 0
+# Clean store table
+stores<-stores[,c("air_store_id","air_genre_name","city","ward","place","hpg_system")]
+
+```
+
+## Get more info about dates
+
+```{r}
+# Order info about holydays
+calendar <- holydays
+tail(calendar)
+# Obtener dia y mes de la fecha
+calendar$day<-day(as.Date(calendar$calendar_date))
+calendar$month<-month(as.Date(calendar$calendar_date))
+calendar$month_day <- (calendar$month * 100) + calendar$day
+calendar$month_name <- month(as.Date(calendar$calendar_date),label = TRUE)
+# obtener dias del golden week 
+calendar$golden_week <- 0
+calendar[calendar$month_day>=429 & calendar$month_day<=505,]$golden_week <- 1
+calendar[calendar$golden_week==1,]
+# Clean data of calendar
+calendar<-calendar[,c("calendar_date","day_of_week","month_name","holiday_flg","golden_week")]
+```
+
+## Get more info about dates
+
+```{r}
+# Order info about holydays
+calendar <- holydays
+tail(calendar)
+# Obtener dia y mes de la fecha
+calendar$day<-day(as.Date(calendar$calendar_date))
+calendar$month<-month(as.Date(calendar$calendar_date))
+calendar$month_day <- (calendar$month * 100) + calendar$day
+calendar$month_name <- month(as.Date(calendar$calendar_date),label = TRUE)
+# obtener dias del golden week 
+calendar$golden_week <- 0
+calendar[calendar$month_day>=429 & calendar$month_day<=505,]$golden_week <- 1
+calendar[calendar$golden_week==1,]
+# Clean data of calendar
+calendar<-calendar[,c("calendar_date","day_of_week","month_name","holiday_flg","golden_week")]
+```
+
+## Get more info about reserves
+
+```{r}
+### Obtener las visitas registradas por air system ###
+
+reserves <- air_reserve
+# obtener dia de la visita
+reserves$ocurrences <- 1
+reserves$visit_date <- as.Date(reserves$visit_datetime)
+reserves$reserve_date <- as.Date(reserves$reserve_datetime)
+reserves$anticipation <- as.numeric(reserves$visit_date - reserves$reserve_date)
+reserves$id <- paste(reserves$air_store_id,reserves$visit_date,sep = "_")
+# Obtener visitas por dia y por tienda
+reserves00 <- aggregate(x=reserves$reserve_visitors, 
+          by= list(id=reserves$id),FUN=sum)
+reserves00$air_visitors<-reserves00$x
+reserves00$x <- NULL
+tail(reserves00)
+# Obtener numero de reservas por dia y por tienda
+reserves01 <- aggregate(reserves$ocurrences, 
+                        by= list(id=reserves$id),FUN=sum)
+reserves01$air_reserves<-reserves01$x
+reserves01$x <- NULL
+tail(reserves01)
+# Obtener media de anticipación por dia y por tienda
+reserves02 <- aggregate(reserves$anticipation, 
+                        by= list(id=reserves$id),FUN=mean)
+reserves02$air_anticipation<-reserves02$x
+reserves02$x <- NULL
+# Realizar el join
+reserves <- merge(reserves00,reserves01,by="id")
+reserves <- merge(reserves,reserves02,by="id")
+rm(reserves00,reserves01,reserves02)
+
+### Obtener las visitas registradas por hpg system ###
+
+reshpg<-merge(store_relation,hpg_reserve,by="hpg_store_id")
+# obtener dia de la visita
+reshpg$ocurrences <- 1
+reshpg$visit_date <- as.Date(reshpg$visit_datetime)
+reshpg$reserve_date <- as.Date(reshpg$reserve_datetime)
+reshpg$anticipation <- as.numeric(reshpg$visit_date - reshpg$reserve_date)
+reshpg$id <- paste(reshpg$air_store_id,reshpg$visit_date,sep = "_")
+# Obtener visitas por dia y por tienda
+reshpg00 <- aggregate(x=reshpg$reserve_visitors, 
+                      by= list(id=reshpg$id),FUN=sum)
+reshpg00$hpg_visitors<-reshpg00$x
+reshpg00$x <- NULL
+# Obtener numero de reservas por dia y por tienda
+reshpg01 <- aggregate(reshpg$ocurrences, 
+                        by= list(id=reshpg$id),FUN=sum)
+reshpg01$hpg_reserves<-reshpg01$x
+reshpg01$x <- NULL
+# Obtener media de anticipación por dia y por tienda
+reshpg02 <- aggregate(reshpg$anticipation, 
+                        by= list(id=reshpg$id),FUN=mean)
+reshpg02$hpg_anticipation<-reshpg02$x
+reshpg02$x <- NULL
+# Realizar el join
+reshpg <- merge(reshpg00,reshpg01,by="id")
+reshpg <- merge(reshpg,reshpg02,by="id")
+rm(reshpg00,reshpg01,reshpg02)
+
+```
+
+## Join Everything
+
+```{r}
+visits <- merge(store_visits,calendar,by.x = 'visit_date', by.y = 'calendar_date')
+visits <- merge(visits,stores,by = 'air_store_id')
+visits$id <- paste(visits$air_store_id,visits$visit_date,sep = "_")
+
+visits <- merge(visits,reserves,by="id", all.x  = TRUE)
+visits <- merge(visits,reshpg,by="id", all.x = TRUE)
+
+visits[is.na(visits)] <- 0
+visits$tot_visitors <- visits$air_visitors + visits$hpg_visitors
+visits$tot_reserves <- visits$air_reserves + visits$hpg_reserves
+visits$avg_anticipation <- (visits$air_anticipation + visits$hpg_anticipation) / 2
+```
+
+
+## Training and Testing model
+
+Cargando librerías
+```{r message==FALSE}
+library(caret)
+library(Metrics)
+```
+
+Obtención del train y del test
+
+```{r}
+# General data set
+recruit_visits <- visits
+factor_vars <- c('day_of_week','month_name','holiday_flg','golden_week',
+                 'air_genre_name','city','ward','place','hpg_system')
+recruit_visits[factor_vars] <- lapply(recruit_visits[factor_vars], function(x) as.factor(x))
+tail(recruit_visits)
+summary(recruit_visits)
+
+# Split train and test data
+until_train <- "2017-03-15"
+train<-recruit_visits[as.Date(recruit_visits$visit_date) <= until_train,]
+test<-recruit_visits[as.Date(recruit_visits$visit_date) > until_train,]
+#nrow(train) + nrow(test)
+
+rmColumns <- c("id","air_store_id","visit_date","air_reserves",
+               "air_anticipation","hpg_reserves","hpg_anticipation",
+               "tot_reserves","avg_anticipation","place","air_visitors")
+train<-train[, !colnames(train) %in% rmColumns] 
+test<-test[, !colnames(test) %in% rmColumns] 
+colnames(train)
+
+```
+
+Modelado y cargado
+
+```{r}
+set.seed(123)
+fitControl<- trainControl(
+  method="none"
+)
+gridXGB  <- expand.grid(nrounds = c(19),
+                        max_depth = c(18),
+                        eta = c(0.4), 
+                        gamma = c(1),
+                        colsample_bytree = c(0.75),
+                        min_child_weight = c(12),
+                        subsample = c(0.65))
+
+model <- train(visitors~., data=train,
+               trControl=fitControl,
+               tuneGrid=gridXGB,
+               method="xgbTree")
+```
+
+Error RMSLE del modelo
+```{r}
+pred = predict(model,newdata=test[,!(names(test) %in% c("visitors"))])
+errorPred <- rmsle(test$visitors, round(pred,0))
+print(paste0("RMSLE:",errorPred))
+```
+
+Importancia de las variables
+```{r pressure, echo=FALSE}
+importancia<-varImp(model)
+importancia$importance
+```
